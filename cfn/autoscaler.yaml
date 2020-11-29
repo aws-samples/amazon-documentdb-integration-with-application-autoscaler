@@ -1,0 +1,680 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+
+Description: >
+  This template builds a DocumentDB cluster with a writer and two replicas.
+  Note that a large part of this template is taken from the example at
+  https://github.com/aws/aws-auto-scaling-custom-resource/blob/master/cloudformation/templates/custom-resource-stack.yaml
+
+Parameters:
+  DbClusterIdentifier:
+    Type: String
+  ProjectTag:
+    Type: String
+  ZipGet:
+    Type: String
+  ZipPatch:
+    Type: String
+  BucketName:
+    Type: String
+  LogLevel:
+    Type: String
+    Default: "INFO"
+
+Resources: 
+  Dashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties: 
+      DashboardName: "DocumentDB-Metrics"
+      DashboardBody: !Sub |
+        {
+            "widgets": [
+                {
+                    "type": "metric",
+                    "x": 0,
+                    "y": 3,
+                    "width": 6,
+                    "height": 6,
+                    "properties": {
+                        "metrics": [
+                            [ "AWS/DocDB", "CPUUtilization", "Role", "WRITER", "DBClusterIdentifier", "${DbClusterIdentifier}" ]
+                        ],
+                        "view": "timeSeries",
+                        "stacked": false,
+                        "region": "${AWS::Region}",
+                        "title": "Writer CPU Utilization",
+                        "stat": "Average",
+                        "period": 60
+                    }
+                },
+                {
+                    "type": "metric",
+                    "x": 0,
+                    "y": 18,
+                    "width": 6,
+                    "height": 6,
+                    "properties": {
+                        "metrics": [
+                            [ "AWS/DocDB", "CPUUtilization", "Role", "READER", "DBClusterIdentifier", "${DbClusterIdentifier}" ]
+                        ],
+                        "view": "timeSeries",
+                        "stacked": false,
+                        "region": "${AWS::Region}",
+                        "title": "Reader CPU utilization",
+                        "period": 60,
+                        "stat": "Average"
+                    }
+                },
+                {
+                    "type": "metric",
+                    "x": 0,
+                    "y": 9,
+                    "width": 6,
+                    "height": 6,
+                    "properties": {
+                        "metrics": [
+                            [ "AWS/DocDB", "DBClusterReplicaLagMaximum", "Role", "WRITER", "DBClusterIdentifier", "${DbClusterIdentifier}" ]
+                        ],
+                        "view": "timeSeries",
+                        "stacked": false,
+                        "region": "${AWS::Region}",
+                        "title": "Replica lag",
+                        "period": 60,
+                        "stat": "Average"
+                    }
+                },
+                {
+                    "type": "metric",
+                    "x": 6,
+                    "y": 18,
+                    "width": 6,
+                    "height": 6,
+                    "properties": {
+                        "metrics": [
+                            [ "AWS/DocDB", "ReadIOPS", "Role", "READER", "DBClusterIdentifier", "${DbClusterIdentifier}" ],
+                            [ ".", "WriteIOPS", ".", ".", ".", "." ]
+                        ],
+                        "view": "timeSeries",
+                        "stacked": false,
+                        "region": "${AWS::Region}",
+                        "title": "Reader IOPS",
+                        "stat": "Average",
+                        "period": 60
+                    }
+                },
+                {
+                    "type": "metric",
+                    "x": 6,
+                    "y": 3,
+                    "width": 6,
+                    "height": 6,
+                    "properties": {
+                        "view": "timeSeries",
+                        "stacked": false,
+                        "metrics": [
+                            [ "AWS/DocDB", "ReadIOPS", "Role", "WRITER", "DBClusterIdentifier", "${DbClusterIdentifier}" ],
+                            [ ".", "WriteIOPS", ".", ".", ".", "." ]
+                        ],
+                        "region": "${AWS::Region}",
+                        "title": "Writer IOPS"
+                    }
+                },
+                {
+                    "type": "metric",
+                    "x": 12,
+                    "y": 3,
+                    "width": 6,
+                    "height": 6,
+                    "properties": {
+                        "metrics": [
+                            [ "AWS/DocDB", "ReadLatency", "Role", "WRITER", "DBClusterIdentifier", "${DbClusterIdentifier}" ],
+                            [ ".", "WriteLatency", ".", ".", ".", "." ]
+                        ],
+                        "view": "timeSeries",
+                        "stacked": false,
+                        "region": "${AWS::Region}",
+                        "title": "Writer I/O Latency",
+                        "stat": "Average",
+                        "period": 60
+                    }
+                },
+                {
+                    "type": "metric",
+                    "x": 12,
+                    "y": 18,
+                    "width": 6,
+                    "height": 6,
+                    "properties": {
+                        "metrics": [
+                            [ "AWS/DocDB", "WriteLatency", "Role", "READER", "DBClusterIdentifier", "${DbClusterIdentifier}" ],
+                            [ ".", "ReadLatency", ".", ".", ".", "." ]
+                        ],
+                        "view": "timeSeries",
+                        "stacked": false,
+                        "region": "${AWS::Region}",
+                        "title": "Reader I/O Latency",
+                        "stat": "Average",
+                        "period": 60
+                    }
+                },
+                {
+                    "type": "metric",
+                    "x": 18,
+                    "y": 3,
+                    "width": 6,
+                    "height": 6,
+                    "properties": {
+                        "metrics": [
+                            [ "AWS/DocDB", "SwapUsage", "Role", "WRITER", "DBClusterIdentifier", "${DbClusterIdentifier}" ]
+                        ],
+                        "view": "timeSeries",
+                        "stacked": false,
+                        "region": "${AWS::Region}",
+                        "title": "Writer swap usage",
+                        "stat": "Average",
+                        "period": 60
+                    }
+                },
+                {
+                    "type": "metric",
+                    "x": 18,
+                    "y": 18,
+                    "width": 6,
+                    "height": 6,
+                    "properties": {
+                        "metrics": [
+                            [ "AWS/DocDB", "SwapUsage", "Role", "READER", "DBClusterIdentifier", "${DbClusterIdentifier}" ]
+                        ],
+                        "view": "timeSeries",
+                        "stacked": false,
+                        "region": "${AWS::Region}",
+                        "stat": "Average",
+                        "period": 60,
+                        "title": "Reader swap usage"
+                    }
+                },
+                {
+                    "type": "text",
+                    "x": 0,
+                    "y": 0,
+                    "width": 24,
+                    "height": 3,
+                    "properties": {
+                        "markdown": "\n# Writer\n"
+                    }
+                },
+                {
+                    "type": "text",
+                    "x": 0,
+                    "y": 15,
+                    "width": 24,
+                    "height": 3,
+                    "properties": {
+                        "markdown": "\n# Readers\n"
+                    }
+                }
+            ]
+        }
+
+  S3Bucket:
+    DeletionPolicy: Retain
+    Type: "AWS::S3::Bucket"
+    Properties: {}
+  BucketPolicy:
+    Type: "AWS::S3::BucketPolicy"
+    Properties:
+      Bucket:
+        Ref: S3Bucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Sid: "AWSCloudTrailAclCheck"
+            Effect: "Allow"
+            Principal:
+              Service: "cloudtrail.amazonaws.com"
+            Action: "s3:GetBucketAcl"
+            Resource:
+              !Sub |-
+                arn:aws:s3:::${S3Bucket}
+          -
+            Sid: "AWSCloudTrailWrite"
+            Effect: "Allow"
+            Principal:
+              Service: "cloudtrail.amazonaws.com"
+            Action: "s3:PutObject"
+            Resource:
+              !Sub |-
+                arn:aws:s3:::${S3Bucket}/AWSLogs/${AWS::AccountId}/*
+            Condition:
+              StringEquals:
+                s3:x-amz-acl: "bucket-owner-full-control"
+  CustomResourceScalingTrail:
+    DependsOn:
+      - BucketPolicy
+    Type: "AWS::CloudTrail::Trail"
+    Properties:
+      S3BucketName:
+        Ref: S3Bucket
+      IsLogging: true
+  CustomResourceEndpoint:
+    Type: 'AWS::ApiGateway::RestApi'
+    Properties:
+      Name: DocumentDB Custom Resource Scaling API
+      Description: A new REST API in API Gateway to use with Application Auto Scaling and a DocumentDB cluster
+      Body:
+        swagger: "2.0"
+        info:
+          description: "Swagger REST API Specification"
+          version: "1.0.0"
+          title: "Scaling API"
+          license:
+            name: MIT-0
+            url: https://spdx.org/licenses/MIT-0.html
+          basePath: "/v1"
+          schemes:
+           - "http"
+          produces:
+           - "application/json"
+        paths:
+          /scalableTargetDimensions/{scalableTargetDimensionId}:
+            get:
+              tags:
+              - "ScalableTargets"
+              summary: "Describe target"
+              description: "Returns information about about a registered scalable target dimension, \
+              including the desired and actual capacity."
+              operationId: "controllers.default_controller.scalable_target_id_get"
+              parameters:
+              - name: "scalableTargetDimensionId"
+                in: "path"
+                description: "The identifier of a scalable target dimension to retrieve."
+                required: true
+                type: "string"
+                format: ""
+              responses:
+                '200':
+                  description: "A JSON object that contains information about the resource."
+                  schema:
+                    '$ref': "#/definitions/ScalableTargetDimension"
+                '400':
+                  description: "Client Error"
+                  schema:
+                    '$ref': "#/definitions/Error"
+                '403':
+                  description: "Client Error: Not authorized"
+                  schema:
+                    '$ref': "#/definitions/Error"
+                '404':
+                  description: "Client Error: ScalableTargetDimension not found"
+                  schema:
+                    '$ref': "#/definitions/Error"
+                '429':
+                  description: "Client Error: Too Many Requests"
+                  schema:
+                    '$ref': "#/definitions/Error"
+                '500':
+                  description: "Server Error"
+                  schema:
+                    '$ref': "#/definitions/Error"
+              x-tags:
+              - tag: "ScalableTargets"
+              security:
+              - sigv4: []
+              x-amazon-apigateway-integration:
+                uri: 
+                    !Join 
+                        - ''
+                        - - 'arn:aws:apigateway:'
+                          - !Ref 'AWS::Region'
+                          - ':lambda:path/2015-03-31/functions/'
+                          - !GetAtt LambdaGet.Arn
+                          - '/invocations'
+                passthroughBehavior: "when_no_match"
+                httpMethod: "POST"
+                responses:
+                  default:
+                    statusCode: "200"
+                  '200':
+                    statusCode: "200"
+                  '403':
+                    statusCode: "403"
+                  '404':
+                    statusCode: "404"
+                  '429':
+                    statusCode: "429"
+                  '4\d{2}':
+                    statusCode: "400"
+                requestParameters:
+                  integration.request.path.scalableTargetDimensionId: "method.request.path.scalableTargetDimensionId"
+                type: "aws_proxy"
+            patch:
+              tags:
+              - "ScalableTargets"
+              summary: "Update ScalableTargetDimension"
+              operationId: "controllers.default_controller.scalable_target_id_patch"
+              consumes:
+              - "application/json"
+              parameters:
+              - name: "scalableTargetDimensionId"
+                in: "path"
+                description: "The identifier of the scalable target dimension to update."
+                required: true
+                type: "string"
+                format: ""
+              - in: "body"
+                name: "updateRequest"
+                description: "A request sent in JSON to update the scalable target dimension."
+                required: true
+                schema:
+                  '$ref': "#/definitions/ScalableTargetDimensionUpdate"
+              responses:
+                '200':
+                  description: "A JSON object that contains information about the resource."
+                  schema:
+                    '$ref': "#/definitions/ScalableTargetDimension"
+                '400':
+                  description: "Client Error"
+                  schema:
+                    '$ref': "#/definitions/Error"
+                '403':
+                  description: "Client Error: Not authorized"
+                  schema:
+                    '$ref': "#/definitions/Error"
+                '404':
+                  description: "Client Error: ScalableTargetDimension not found"
+                  schema:
+                    '$ref': "#/definitions/Error"
+                '429':
+                  description: "Client Error: Too Many Requests"
+                  schema:
+                    '$ref': "#/definitions/Error"
+                '500':
+                  description: "Server Error"
+                  schema:
+                    '$ref': "#/definitions/Error"
+              x-tags:
+              - tag: "ScalableTargets"
+              security:
+              - sigv4: []
+              x-amazon-apigateway-integration:
+                uri: !Join 
+                        - ''
+                        - - 'arn:aws:apigateway:'
+                          - !Ref 'AWS::Region'
+                          - ':lambda:path/2015-03-31/functions/'
+                          - !GetAtt LambdaPatch.Arn
+                          - '/invocations'
+                passthroughBehavior: "when_no_match"
+                httpMethod: "POST"
+                responses:
+                  default:
+                    statusCode: "200"
+                  '200':
+                    statusCode: "200"
+                  '403':
+                    statusCode: "403"
+                  '404':
+                    statusCode: "404"
+                  '429':
+                    statusCode: "429"
+                  '4\d{2}':
+                    statusCode: "400"
+                requestParameters:
+                  integration.request.path.scalableTargetDimensionId: "method.request.path.scalableTargetDimensionId"
+                type: "aws_proxy"
+        securityDefinitions:
+          sigv4:
+            type: "apiKey"
+            name: "Authorization"
+            in: "header"
+            x-amazon-apigateway-authtype: "awsSigv4"
+        definitions:
+          Error:
+            type: "object"
+            properties:
+              message:
+                type: "string"
+          ScalableTargetDimension:
+            description: "A resource that represents the scaling state for a single dimension \
+           of a scalable target."
+            type: "object"
+            required:
+            - "actualCapacity"
+            - "desiredCapacity"
+            - "scalableTargetDimensionId"
+            - "scalingStatus"
+            - "version"
+            properties:
+              scalableTargetDimensionId:
+                type: "string"
+                format: ""
+                description: "A unique identifier representing a specific scalable target dimension."
+              version:
+                type: "string"
+                format: ""
+                description: "The version associated with the scalable target dimension."
+              actualCapacity:
+                type: "number"
+                format: "double"
+                description: "The actual capacity of the scalable target dimension."
+              desiredCapacity:
+                type: "number"
+                format: "double"
+                description: "The desired capacity of the scalable target dimension."
+              scalingStatus:
+                type: "string"
+                format: ""
+                description: "The current status of scaling activity."
+                enum:
+                - "Pending" # scaling action has not yet begun
+                - "InProgress" # scaling action is in progress
+                - "Successful" # last scaling action was successful
+                - "Failed" # last scaling action has failed
+              resourceName:
+                type: "string"
+                format: ""
+                description: "Optional user-friendly name for a specific resource."
+              dimensionName:
+                type: "string"
+                format: ""
+                description: "Optional user-friendly name for the scalable dimension associated with the resource."
+              failureReason:
+                type: "string"
+                format: ""
+                description: "Optional failure reason that is provided if a scaling action fails."
+          ScalableTargetDimensionUpdate:
+            description: "An update to be applied to the scalable target dimension."
+            type: "object"
+            required:
+            - "desiredCapacity"
+            properties:
+              desiredCapacity:
+                type: "number"
+                format: "double"
+                description: "The new desired capacity of the target."
+  ProdStageDescription:
+    DependsOn:
+      - Account
+    Type: "AWS::ApiGateway::Stage"
+    Properties:
+      DeploymentId: !Ref ProdDeployment
+      Description: "Prod stage"
+      RestApiId: !Ref CustomResourceEndpoint
+      StageName: "prod"
+      TracingEnabled: true
+      MethodSettings:
+        - HttpMethod: "*"
+          LoggingLevel: "INFO"
+          ResourcePath: "/*"
+          MetricsEnabled: true
+          DataTraceEnabled: true
+  ProdDeployment:
+    Type: "AWS::ApiGateway::Deployment"
+    Properties:
+      Description: "The prod path through which the Scaling API deployment is accessible."
+      RestApiId: !Ref CustomResourceEndpoint
+  LambdaServiceRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: "DocumentDbAutoScaler-LambdaServiceRole"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "lambda.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: root
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: 'ssm:DescribeParameters'
+                Resource: '*'
+              - Effect: Allow
+                Action: 'ssm:GetParameter'
+                Resource: !Join 
+                  - ''
+                  - - 'arn:aws:ssm:'
+                    - !Ref 'AWS::Region'
+                    - ':'
+                    - !Ref 'AWS::AccountId'
+                    - ':parameter/'
+                    - !Ref DesiredSizeParameter
+              - Effect: Allow
+                Action: 'ssm:PutParameter'
+                Resource: !Join 
+                  - ''
+                  - - 'arn:aws:ssm:'
+                    - !Ref 'AWS::Region'
+                    - ':'
+                    - !Ref 'AWS::AccountId'
+                    - ':parameter/'
+                    - !Ref DesiredSizeParameter
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/CloudWatchFullAccess"
+        - "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+        - "arn:aws:iam::aws:policy/AmazonDocDBFullAccess"
+  CloudWatchRole:
+   Type: "AWS::IAM::Role"
+   Properties:
+    AssumeRolePolicyDocument:
+     Version: "2012-10-17"
+     Statement:
+      - Effect: Allow
+        Principal:
+         Service:
+          - "apigateway.amazonaws.com"
+        Action: "sts:AssumeRole"
+    Path: "/"
+    ManagedPolicyArns:
+     - "arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"
+  Account:
+   Type: "AWS::ApiGateway::Account"
+   Properties:
+    CloudWatchRoleArn:
+     "Fn::GetAtt":
+      - CloudWatchRole
+      - Arn
+  LambdaGet:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Description: "A Lambda function to get DocumentDB metrics."
+      Handler: "index_get.handler"
+      Role:
+        Fn::GetAtt:
+          - "LambdaServiceRole"
+          - "Arn"
+      Code:
+        S3Bucket: !Ref BucketName
+        S3Key: "functions/lambda-get.zip"
+        S3ObjectVersion: !Ref ZipGet
+      Environment:
+        Variables:
+          LOGLEVEL: !Ref LogLevel
+      Runtime: "python3.6"
+      Timeout: "25"
+    DependsOn:
+      - LambdaServiceRole
+  LambdaPatch:
+    Type: "AWS::Lambda::Function"
+    Properties:
+      Description: "A Lambda function to scale DocumentDB cluster size."
+      Handler: "index_patch.handler"
+      Role:
+        Fn::GetAtt:
+          - "LambdaServiceRole"
+          - "Arn"
+      Code:
+        S3Bucket: !Ref BucketName
+        S3Key: "functions/lambda-patch.zip"
+        S3ObjectVersion: !Ref ZipPatch
+      Environment:
+        Variables:
+          LOGLEVEL: !Ref LogLevel
+      Runtime: "python3.6"
+      Timeout: "25"
+    DependsOn:
+      - LambdaServiceRole
+  PermissionForApiToInvokeLambdaGet:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName:
+        Ref: "LambdaGet"
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn:
+        !Join 
+            - ''
+            - - 'arn:aws:execute-api:'
+              - !Ref 'AWS::Region'
+              - ':'
+              - !Ref 'AWS::AccountId'
+              - ':'
+              - !Ref 'CustomResourceEndpoint'
+              - '/*/GET/scalableTargetDimensions/*'
+  PermissionForApiToInvokeLambdaPatch:
+    Type: "AWS::Lambda::Permission"
+    Properties:
+      FunctionName:
+        Ref: "LambdaPatch"
+      Action: "lambda:InvokeFunction"
+      Principal: "apigateway.amazonaws.com"
+      SourceArn:
+        !Join 
+            - ''
+            - - 'arn:aws:execute-api:'
+              - !Ref 'AWS::Region'
+              - ':'
+              - !Ref 'AWS::AccountId'
+              - ':'
+              - !Ref 'CustomResourceEndpoint'
+              - '/*/PATCH/scalableTargetDimensions/*'
+  DesiredSizeParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Join ["-", ["DesiredSize", !Ref DbClusterIdentifier]]
+      Type: String
+      Value: "2"
+      Description: Stores the desired number of read replicas
+      AllowedPattern: '^\d+$'
+      Tags:
+        Project: !Ref ProjectTag
+        Name: !Join ["", [!Ref ProjectTag, "-SSM-Param"]]
+  
+
+Outputs:
+  DashboardName:
+    Value: !Ref Dashboard
+  ApiEndpoint:
+    Value: !Ref CustomResourceEndpoint
+  S3BucketName:
+      Value: !Ref S3Bucket
+      Description: The location of the CloudTrail logs for API-related event history.

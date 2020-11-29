@@ -1,0 +1,5 @@
+.vscode
+.DS_Store
+*.code-workspace
+latest*.txt
+lambda/*.zip

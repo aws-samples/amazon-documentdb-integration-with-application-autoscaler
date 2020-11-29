@@ -1,0 +1,168 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+
+---
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: >
+  This template builds a DocumentDB cluster in a VPC.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      -
+        Label:
+          default: "VPC and network Configuration"
+        Parameters:
+          - vpccidr
+          - AppPrivateCIDRA
+          - AppPrivateCIDRB
+          - AppPublicCIDRA
+          - AppPublicCIDRB
+      -
+        Label:
+          default: "Database Configuration"
+        Parameters:
+          - PrimaryPassword
+      -
+        Label:
+          default: "Other Configuration"
+        Parameters:
+          - ProjectTag
+          - TemplateBucketName
+          - TemplateBucketPrefix
+          - ZipGet
+          - ZipPatch
+
+Mappings:
+  RegionMap:
+    us-east-1:
+      "REGIONURLSUFFIX" : ""
+    us-west-2:
+      "REGIONURLSUFFIX" : "-us-west-2"
+
+Parameters:
+  PrimaryPassword:
+    Type: String
+    Description: "Password for DocumentDB"
+  ZipGet:
+    Type: String
+  ZipPatch:
+    Type: String
+  TemplateBucketName:
+    Type: String
+    Description: >
+      Name for the S3 bucket that contains the nested templates.
+  TemplateBucketPrefix:
+    Type: String
+    Description: >
+      Prefix for the path to the nested templates in the S3 bucket.
+  ProjectTag:
+    Type: String
+    Description: Tag to apply to created resources for visibility
+    Default: DocDbAutoScale 
+  vpccidr:
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: Must be a valid CIDR range in the form x.x.x.x/16
+    Default: 10.20.0.0/16
+    Description: CIDR block for the VPC
+  AppPublicCIDRA:
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: Must be a valid CIDR range in the form x.x.x.x/22
+    Default: 10.20.1.0/24
+    Description: CIDR block for the first public subnet in the VPC.
+  AppPublicCIDRB:
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: Must be a valid CIDR range in the form x.x.x.x/22
+    Default: 10.20.2.0/24
+    Description: CIDR block for the second public subnet in the VPC.
+  AppPrivateCIDRA:
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: Must be a valid CIDR range in the form x.x.x.x/22
+    Default: 10.20.3.0/24
+    Description: CIDR block for the first private subnet in the VPC.
+  AppPrivateCIDRB:
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: Must be a valid CIDR range in the form x.x.x.x/22
+    Default: 10.20.4.0/24
+    Description: CIDR block for the second private subnet in the VPC.
+
+Resources:
+  DbStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Join ["", ["https://s3", !FindInMap [RegionMap, !Ref "AWS::Region", REGIONURLSUFFIX], ".amazonaws.com/", !Ref TemplateBucketName, "/", !Ref TemplateBucketPrefix, "/docdb.yaml"]]
+      Parameters:
+        ProjectTag: !Ref ProjectTag
+        SubnetA: !GetAtt NetworkStack.Outputs.SubnetIdPrivateA
+        SubnetB: !GetAtt NetworkStack.Outputs.SubnetIdPrivateB
+        VPC: !GetAtt NetworkStack.Outputs.VpcId
+        PrimaryPassword: !Ref PrimaryPassword
+  NetworkStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Join ["", ["https://s3", !FindInMap [RegionMap, !Ref "AWS::Region", REGIONURLSUFFIX], ".amazonaws.com/", !Ref TemplateBucketName, "/", !Ref TemplateBucketPrefix, "/network.yaml"]]
+      Parameters:
+        vpccidr: !Ref vpccidr
+        AppPrivateCIDRA: !Ref AppPrivateCIDRA
+        AppPrivateCIDRB: !Ref AppPrivateCIDRB
+        AppPublicCIDRA: !Ref AppPublicCIDRA
+        AppPublicCIDRB: !Ref AppPublicCIDRB
+        ProjectTag: !Ref ProjectTag
+  AutoscalerStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Join ["", ["https://s3", !FindInMap [RegionMap, !Ref "AWS::Region", REGIONURLSUFFIX], ".amazonaws.com/", !Ref TemplateBucketName, "/", !Ref TemplateBucketPrefix, "/autoscaler.yaml"]]
+      Parameters:
+        ProjectTag: !Ref ProjectTag
+        ZipGet: !Ref ZipGet
+        ZipPatch: !Ref ZipPatch
+        BucketName: !Ref TemplateBucketName
+        DbClusterIdentifier: !GetAtt DbStack.Outputs.DBClusterIdentifier
+  JumphostStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Join ["", ["https://s3", !FindInMap [RegionMap, !Ref "AWS::Region", REGIONURLSUFFIX], ".amazonaws.com/", !Ref TemplateBucketName, "/", !Ref TemplateBucketPrefix, "/jumphost.yaml"]]
+      Parameters:
+        ProjectTag: !Ref ProjectTag
+        SubnetPrivate: !GetAtt NetworkStack.Outputs.SubnetIdPrivateA
+        ClientFirewall: !GetAtt DbStack.Outputs.ClientFirewallId
+        VPC: !GetAtt NetworkStack.Outputs.VpcId
+  
+Outputs:
+  VpcId:
+    Description: VPC ID 
+    Value: !GetAtt NetworkStack.Outputs.VpcId
+  JumpHost:
+    Description: Instance ID of jump host
+    Value: !GetAtt JumphostStack.Outputs.JumpAddress
+  DashboardName:
+    Description: DocumentDB metrics dashboard
+    Value: !GetAtt AutoscalerStack.Outputs.DashboardName
+  DbEndpoint: 
+    Description: DocumentDB endpoint
+    Value: !GetAtt DbStack.Outputs.DbEndpoint
+  DBClusterIdentifier: 
+    Description: DocumentDB cluster ID
+    Value: !GetAtt DbStack.Outputs.DBClusterIdentifier
+  DbUser:
+    Description: DocumentDB user name
+    Value: !GetAtt DbStack.Outputs.DbUser
+  ApiEndpoint:
+    Value: !GetAtt AutoscalerStack.Outputs.ApiEndpoint
+

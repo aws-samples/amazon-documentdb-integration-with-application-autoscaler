@@ -1,17 +1,10 @@
-## My Project
-
-TODO: Fill this README out!
-
-Be sure to:
-
-* Change the title in this README
-* Edit your repository description on GitHub
-
-## Security
-
-See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
+# Amazon DocumentDB Integration with Application Autoscaler
 
 ## License
 
-This library is licensed under the MIT-0 License. See the LICENSE file.
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: MIT-0
 
+## Overview
+
+See the accompanying blog post.

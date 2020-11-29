@@ -1,0 +1,112 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+# SPDX-License-Identifier: MIT-0
+
+Description: >
+  This template builds a DocumentDB cluster with a writer and two replicas.
+
+Parameters:
+  SubnetA:
+    Type: "AWS::EC2::Subnet::Id"
+  SubnetB:
+    Type: "AWS::EC2::Subnet::Id"
+  ProjectTag:
+    Type: String
+  VPC:
+    Type: "AWS::EC2::VPC::Id"
+    Description: "VPC ID for creating the application"
+  InstanceType:
+    Type: String
+    Description: "Instance type for DocumentDB primary and replicas"
+    Default: "db.r5.large"
+  PrimaryUser:
+    Type: String
+    Description: "User name for DocumentDB"
+    Default: "PrimaryUser"
+  PrimaryPassword:
+    Type: String
+    Description: "Password for DocumentDB"
+
+Resources: 
+  dBSubnetGroup: 
+      Type: "AWS::DocDB::DBSubnetGroup"
+      Properties: 
+         DBSubnetGroupDescription: "Subnet group spanning two private AZs"
+         SubnetIds: 
+            - !Ref SubnetA
+            - !Ref SubnetB
+         Tags:
+          -
+            Key: Project
+            Value: !Ref ProjectTag
+          -
+            Key: Name
+            Value: !Join ["", [!Ref ProjectTag, "-DBSubnetGroup"]]
+  dBParamGroup:
+      Type: "AWS::DocDB::DBClusterParameterGroup"
+      Properties:
+        Description: "TLS disabled"
+        Family: "docdb3.6"
+        Parameters: 
+          tls: "disabled"
+        Tags: 
+          - 
+            Key: Project
+            Value: !Ref ProjectTag
+          -
+            Key: Name
+            Value: !Join ["", [!Ref ProjectTag, "-DBParams"]]
+  dBCluster: 
+      Type: "AWS::DocDB::DBCluster"
+      Properties: 
+         DBSubnetGroupName : !Ref dBSubnetGroup
+         DBClusterParameterGroupName: !Ref dBParamGroup
+         MasterUsername : !Ref PrimaryUser
+         MasterUserPassword : !Ref PrimaryPassword
+         VpcSecurityGroupIds:
+          - !Ref DbFirewall
+  dbInstanceM:
+      Type: "AWS::DocDB::DBInstance"
+      Properties:
+        DBClusterIdentifier: !Ref dBCluster
+        DBInstanceClass: !Ref InstanceType
+  dbInstanceR1:
+      Type: "AWS::DocDB::DBInstance"
+      Properties:
+        DBClusterIdentifier: !Ref dBCluster
+        DBInstanceClass: !Ref InstanceType
+  dbInstanceR2:
+      Type: "AWS::DocDB::DBInstance"
+      Properties:
+        DBClusterIdentifier: !Ref dBCluster
+        DBInstanceClass: !Ref InstanceType
+  DbFirewall:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: !Join ["", ["Stack ", !Ref "AWS::StackId", " DB"]]
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        -
+          SourceSecurityGroupId: !Ref ClientFirewall
+          IpProtocol: "-1"
+          ToPort: "-1"
+      SecurityGroupEgress:
+        -
+          CidrIp: 0.0.0.0/0
+          ToPort: "-1"
+          IpProtocol: "-1"
+  ClientFirewall:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: !Join ["", ["Stack ", !Ref "AWS::StackId", " Client"]]
+      VpcId: !Ref VPC
+Outputs:
+  ClientFirewallId:
+    Value: !Ref ClientFirewall
+  DbEndpoint: 
+    Value: !GetAtt dBCluster.Endpoint
+  DBClusterIdentifier: 
+    Value: !Ref dBCluster
+  DbUser:
+    Value: !Ref PrimaryUser
