@@ -7,4 +7,4 @@ SPDX-License-Identifier: MIT-0
 
 ## Overview
 
-See the accompanying blog post.
+See the accompanying blog post: https://aws.amazon.com/blogs/database/amazon-documentdb-with-mongodb-compatibility-read-autoscaling/
