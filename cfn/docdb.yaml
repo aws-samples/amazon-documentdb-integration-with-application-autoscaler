@@ -27,6 +27,7 @@ Parameters:
   PrimaryPassword:
     Type: String
     Description: "Password for DocumentDB"
+    NoEcho: true
 
 Resources: 
   dBSubnetGroup: 
@@ -64,6 +65,7 @@ Resources:
          DBClusterParameterGroupName: !Ref dBParamGroup
          MasterUsername : !Ref PrimaryUser
          MasterUserPassword : !Ref PrimaryPassword
+         StorageEncrypted : true
          VpcSecurityGroupIds:
           - !Ref DbFirewall
   dbInstanceM:

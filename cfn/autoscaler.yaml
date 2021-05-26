@@ -221,7 +221,11 @@ Resources:
   S3Bucket:
     DeletionPolicy: Retain
     Type: "AWS::S3::Bucket"
-    Properties: {}
+    Properties: 
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+        - ServerSideEncryptionByDefault:
+            SSEAlgorithm: AES256
   BucketPolicy:
     Type: "AWS::S3::BucketPolicy"
     Properties:
@@ -510,7 +514,7 @@ Resources:
           LoggingLevel: "INFO"
           ResourcePath: "/*"
           MetricsEnabled: true
-          DataTraceEnabled: true
+          DataTraceEnabled: false
   ProdDeployment:
     Type: "AWS::ApiGateway::Deployment"
     Properties:
