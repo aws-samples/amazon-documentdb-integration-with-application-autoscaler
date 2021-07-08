@@ -243,6 +243,9 @@ Resources:
             Resource:
               !Sub |-
                 arn:aws:s3:::${S3Bucket}
+            Condition:
+              StringEquals:
+                aws:SourceAccount: ${AWS::AccountId}
           -
             Sid: "AWSCloudTrailWrite"
             Effect: "Allow"
@@ -255,6 +258,8 @@ Resources:
             Condition:
               StringEquals:
                 s3:x-amz-acl: "bucket-owner-full-control"
+              StringEquals:
+                aws:SourceAccount: ${AWS::AccountId}
   CustomResourceScalingTrail:
     DependsOn:
       - BucketPolicy
