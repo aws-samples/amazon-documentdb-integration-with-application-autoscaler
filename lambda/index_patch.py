@@ -110,7 +110,7 @@ def handler(event, context):
                 num_to_create = desired_count - num_available
                 for idx in range(num_to_create):
                     docdb.create_db_instance(
-                        DBInstanceIdentifier=readers[0] + '-' + str(idx) + '-' + str(int(time.time())),
+                        DBInstanceIdentifier='reader-instance-' + str(idx) + '-' + str(int(time.time())),
                         DBInstanceClass=reader_type,
                         Engine=reader_engine,
                         DBClusterIdentifier=cluster_id
