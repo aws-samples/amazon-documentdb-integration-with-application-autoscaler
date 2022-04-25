@@ -48,7 +48,7 @@ Resources:
       Type: "AWS::DocDB::DBClusterParameterGroup"
       Properties:
         Description: "TLS disabled"
-        Family: "docdb3.6"
+        Family: "docdb4.0"
         Parameters: 
           tls: "disabled"
         Tags: 
